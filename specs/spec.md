@@ -563,7 +563,8 @@ helm/flower-sales-system/
 │   ├── service-mysql.yaml
 │   ├── ingress.yaml
 │   ├── pvc-mysql.yaml
-│   └── configmap.yaml
+│   ├── configmap.yaml
+│   └── secret.yaml
 ```
 
 #### 10.7.2 values.yaml 示例
@@ -670,14 +671,218 @@ k8s-clean:
 	kind delete cluster --name flower-sales-system
 ```
 
-### 10.9 环境变量配置
+### 10.9 配置管理
 
+#### 10.9.1 配置管理原则
+- **所有配置通过 ConfigMap 管理**，禁止硬编码配置
+- **程序启动时从 ConfigMap 读取配置**
+- **敏感信息（密码、密钥）使用 Secret 存储**
+- **配置变更需要重启 Pod 生效**
+
+#### 10.9.2 配置项说明
+
+##### API Server 配置项
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `DB_HOST` | MySQL 服务地址 | mysql-service |
 | `DB_PORT` | MySQL 端口 | 3306 |
 | `DB_NAME` | 数据库名称 | flower_sales |
 | `DB_USER` | 数据库用户 | flower_user |
-| `DB_PASSWORD` | 数据库密码 | - |
-| `JWT_SECRET` | JWT 密钥 | - |
+| `DB_PASSWORD` | 数据库密码 | (from Secret) |
+| `JWT_SECRET` | JWT 密钥 | (from Secret) |
+| `JWT_EXPIRATION` | JWT 过期时间（小时） | 24 |
 | `SERVER_PORT` | API 服务端口 | 8080 |
+| `LOG_LEVEL` | 日志级别 | info |
+| `STOCK_WARNING_THRESHOLD` | 库存预警阈值 | 10 |
+
+##### Web Frontend 配置项
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `API_BASE_URL` | API 服务地址 | http://api-server:8080 |
+
+##### MySQL 配置项
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `MYSQL_ROOT_PASSWORD` | Root 密码 | (from Secret) |
+| `MYSQL_DATABASE` | 数据库名称 | flower_sales |
+| `MYSQL_USER` | 应用用户 | flower_user |
+| `MYSQL_PASSWORD` | 用户密码 | (from Secret) |
+
+#### 10.9.3 ConfigMap 定义
+
+**helm/flower-sales-system/templates/configmap.yaml**:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flower-sales-config
+  namespace: flower-sales
+data:
+  # API Server 配置
+  db-host: "mysql-service"
+  db-port: "3306"
+  db-name: "flower_sales"
+  db-user: "flower_user"
+  jwt-expiration: "24"
+  server-port: "8080"
+  log-level: "info"
+  stock-warning-threshold: "10"
+
+  # Web Frontend 配置
+  api-base-url: "http://api-server:8080"
+
+  # MySQL 配置
+  mysql-database: "flower_sales"
+  mysql-user: "flower_user"
+```
+
+#### 10.9.4 Secret 定义
+
+**helm/flower-sales-system/templates/secret.yaml**:
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: flower-sales-secret
+  namespace: flower-sales
+type: Opaque
+stringData:
+  db-password: "change-me-in-production"
+  jwt-secret: "change-me-in-production"
+  mysql-root-password: "change-me-in-production"
+```
+
+#### 10.9.5 Deployment 引用配置
+
+**API Server Deployment 配置引用**:
+```yaml
+spec:
+  containers:
+    - name: api-server
+      env:
+        # 从 ConfigMap 读取
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: db-host
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: db-port
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: db-name
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: db-user
+
+        # 从 Secret 读取敏感信息
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: flower-sales-secret
+              key: db-password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: flower-sales-secret
+              key: jwt-secret
+
+        # 其他配置
+        - name: JWT_EXPIRATION
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: jwt-expiration
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: server-port
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: log-level
+        - name: STOCK_WARNING_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: flower-sales-config
+              key: stock-warning-threshold
+```
+
+#### 10.9.6 程序启动时读取配置
+
+Go 程序使用标准库 `os.Getenv` 读取环境变量：
+
+```go
+package config
+
+import (
+    "os"
+    "strconv"
+)
+
+type Config struct {
+    // Database
+    DBHost     string
+    DBPort     int
+    DBName     string
+    DBUser     string
+    DBPassword string
+
+    // JWT
+    JWTSecret     string
+    JWTExpiration int // hours
+
+    // Server
+    ServerPort int
+    LogLevel   string
+
+    // Business
+    StockWarningThreshold int
+}
+
+func Load() *Config {
+    return &Config{
+        DBHost:     getEnv("DB_HOST", "mysql-service"),
+        DBPort:     getEnvInt("DB_PORT", 3306),
+        DBName:     getEnv("DB_NAME", "flower_sales"),
+        DBUser:     getEnv("DB_USER", "flower_user"),
+        DBPassword: getEnv("DB_PASSWORD", ""),
+        JWTSecret:     getEnv("JWT_SECRET", ""),
+        JWTExpiration: getEnvInt("JWT_EXPIRATION", 24),
+        ServerPort:         getEnvInt("SERVER_PORT", 8080),
+        LogLevel:           getEnv("LOG_LEVEL", "info"),
+        StockWarningThreshold: getEnvInt("STOCK_WARNING_THRESHOLD", 10),
+    }
+}
+
+func getEnv(key, defaultVal string) string {
+    if val := os.Getenv(key); val != "" {
+        return val
+    }
+    return defaultVal
+}
+
+func getEnvInt(key string, defaultVal int) int {
+    if val := os.Getenv(key); val != "" {
+        if intVal, err := strconv.Atoi(val); err == nil {
+            return intVal
+        }
+    }
+    return defaultVal
+}
+```
+
+#### 10.9.7 配置更新流程
+
+1. 修改 ConfigMap: `kubectl edit configmap flower-sales-config -n flower-sales`
+2. 重启 Deployment: `kubectl rollout restart deployment/api-server -n flower-sales`
+3. 验证配置: `kubectl exec -it deployment/api-server -n flower-sales -- env | grep DB_`
