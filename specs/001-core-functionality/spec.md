@@ -397,7 +397,7 @@ CREATE TABLE order_logs (
 
 ### 10.1 部署架构概览
 
-系统采用 Kubernetes 容器编排，使用微服务架构部署：
+系统采用 Kubernetes 容器编排，使用单体架构部署（遵循"简单性原则"）：
 
 ```
                     ┌─────────────────┐
@@ -409,26 +409,33 @@ CREATE TABLE order_logs (
                     │  MetalLB (LB)   │
                     └────────┬────────┘
                              │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-┌───────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
-│   Web Frontend │  │   API Server   │  │     MySQL      │
-│   (Deployment) │  │  (Deployment)  │  │  (Deployment)  │
-│   Replicas: 2  │  │  Replicas: 2   │  │  Replicas: 1   │
-└────────────────┘  └────────────────┘  └───────┬────────┘
-                                                  │
-                                          ┌───────▼────────┐
-                                          │      PVC       │
-                                          │  (Storage)     │
-                                          └────────────────┘
+            ┌────────────────┴────────────────┐
+            │                                  │
+    ┌───────▼────────┐              ┌───────▼────────┐
+    │   Go Server    │              │     MySQL      │
+    │  (Deployment)  │              │  (Deployment)  │
+    │  Replicas: 2   │              │  Replicas: 1   │
+    │                │              │                │
+    │ ┌────────────┐ │              └───────┬────────┘
+    │ │ 静态文件   │ │                      │
+    │ │ (embed)   │ │              ┌───────▼────────┐
+    │ │ /api/*    │ │              │      PVC       │
+    │ │ /*        │ │              │  (Storage)     │
+    │ └────────────┘ │              └────────────────┘
+    └────────────────┘
 ```
+
+**架构说明**：
+- **单一 Go 二进制**：静态资源通过 `embed.FS` 嵌入程序，无需独立前端服务
+- **API 路由**：`/api/*` 处理 API 请求
+- **静态资源路由**：`/*` 返回嵌入的 HTML/CSS/JS 文件
+- **符合宪法第一条**：简单性原则，避免不必要的微服务拆分
 
 ### 10.2 组件说明
 
 | 组件 | 类型 | 副本数 | 存储需求 |
 |------|------|--------|----------|
-| Web Frontend | Deployment | 2 | 无 |
-| API Server | Deployment | 2 | 无 |
+| Go Server | Deployment | 2 | 无（静态文件嵌入二进制） |
 | MySQL | Deployment | 1 | PVC (10Gi) |
 
 ### 10.3 运行时版本要求
@@ -440,8 +447,9 @@ CREATE TABLE order_logs (
 | **Kind (测试)** | v1.34 |
 
 **Go 版本说明**:
-- API Server 使用 Go v1.25 编译
+- Go Server 使用 Go v1.25 编译
 - go.mod 中指定 `go 1.25`
+- 使用 `embed` 指令嵌入静态文件（Go 1.16+ 特性）
 - Docker 基础镜像使用 `golang:1.25-alpine`
 
 ### 10.4 本地测试环境 (Kind)
@@ -510,20 +518,13 @@ spec:
     - host: flower.local
       http:
         paths:
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: api-server
-                port:
-                  number: 80
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: web-frontend
+                name: go-server
                 port:
-                  number: 80
+                  number: 8080
 ```
 
 ### 10.6 存储 (PVC)
@@ -555,11 +556,9 @@ helm/flower-sales-system/
 ├── values.yaml
 ├── templates/
 │   ├── _helpers.tpl
-│   ├── deployment-web.yaml
-│   ├── deployment-api.yaml
+│   ├── deployment-server.yaml    # Go Server (包含静态文件)
 │   ├── deployment-mysql.yaml
-│   ├── service-web.yaml
-│   ├── service-api.yaml
+│   ├── service-server.yaml
 │   ├── service-mysql.yaml
 │   ├── ingress.yaml
 │   ├── pvc-mysql.yaml
@@ -576,17 +575,7 @@ image:
   pullPolicy: IfNotPresent
   tag: "v1.0.0"
 
-web:
-  containerPort: 80
-  resources:
-    limits:
-      cpu: 200m
-      memory: 128Mi
-    requests:
-      cpu: 100m
-      memory: 64Mi
-
-api:
+server:
   containerPort: 8080
   resources:
     limits:
@@ -618,12 +607,9 @@ ingress:
   hosts:
     - host: flower.local
       paths:
-        - path: /api
-          service: api-server
-          port: 80
         - path: /
-          service: web-frontend
-          port: 80
+          service: go-server
+          port: 8080
 ```
 
 #### 10.7.3 部署命令
@@ -648,9 +634,8 @@ helm install flower-sales-system helm/flower-sales-system \
 3. 安装 NGINX Ingress Controller
 4. 部署 MySQL (等待 Ready)
 5. 运行数据库迁移 (创建表结构)
-6. 部署 API Server
-7. 部署 Web Frontend
-8. 配置 Ingress
+6. 部署 Go Server
+7. 配置 Ingress
 
 #### 10.8.2 Makefile 目标
 ```makefile
@@ -681,7 +666,7 @@ k8s-clean:
 
 #### 10.9.2 配置项说明
 
-##### API Server 配置项
+##### Go Server 配置项
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `DB_HOST` | MySQL 服务地址 | mysql-service |
@@ -689,16 +674,11 @@ k8s-clean:
 | `DB_NAME` | 数据库名称 | flower_sales |
 | `DB_USER` | 数据库用户 | flower_user |
 | `DB_PASSWORD` | 数据库密码 | (from Secret) |
-| `JWT_SECRET` | JWT 密钥 | (from Secret) |
-| `JWT_EXPIRATION` | JWT 过期时间（小时） | 24 |
-| `SERVER_PORT` | API 服务端口 | 8080 |
+| `SESSION_SECRET` | Session 密钥 | (from Secret) |
+| `SESSION_EXPIRY` | Session 过期时间（小时） | 24 |
+| `SERVER_PORT` | HTTP 服务端口 | 8080 |
 | `LOG_LEVEL` | 日志级别 | info |
 | `STOCK_WARNING_THRESHOLD` | 库存预警阈值 | 10 |
-
-##### Web Frontend 配置项
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `API_BASE_URL` | API 服务地址 | http://api-server:8080 |
 
 ##### MySQL 配置项
 | 变量 | 说明 | 默认值 |
@@ -718,18 +698,15 @@ metadata:
   name: flower-sales-config
   namespace: flower-sales
 data:
-  # API Server 配置
+  # Go Server 配置
   db-host: "mysql-service"
   db-port: "3306"
   db-name: "flower_sales"
   db-user: "flower_user"
-  jwt-expiration: "24"
+  session-expiry: "24"
   server-port: "8080"
   log-level: "info"
   stock-warning-threshold: "10"
-
-  # Web Frontend 配置
-  api-base-url: "http://api-server:8080"
 
   # MySQL 配置
   mysql-database: "flower_sales"
@@ -748,17 +725,17 @@ metadata:
 type: Opaque
 stringData:
   db-password: "change-me-in-production"
-  jwt-secret: "change-me-in-production"
+  session-secret: "change-me-in-production"
   mysql-root-password: "change-me-in-production"
 ```
 
 #### 10.9.5 Deployment 引用配置
 
-**API Server Deployment 配置引用**:
+**Go Server Deployment 配置引用**:
 ```yaml
 spec:
   containers:
-    - name: api-server
+    - name: go-server
       env:
         # 从 ConfigMap 读取
         - name: DB_HOST
@@ -788,18 +765,18 @@ spec:
             secretKeyRef:
               name: flower-sales-secret
               key: db-password
-        - name: JWT_SECRET
+        - name: SESSION_SECRET
           valueFrom:
             secretKeyRef:
               name: flower-sales-secret
-              key: jwt-secret
+              key: session-secret
 
         # 其他配置
-        - name: JWT_EXPIRATION
+        - name: SESSION_EXPIRY
           valueFrom:
             configMapKeyRef:
               name: flower-sales-config
-              key: jwt-expiration
+              key: session-expiry
         - name: SERVER_PORT
           valueFrom:
             configMapKeyRef:
@@ -837,9 +814,9 @@ type Config struct {
     DBUser     string
     DBPassword string
 
-    // JWT
-    JWTSecret     string
-    JWTExpiration int // hours
+    // Session
+    SessionSecret string
+    SessionExpiry int // hours
 
     // Server
     ServerPort int
@@ -855,11 +832,11 @@ func Load() *Config {
         DBPort:     getEnvInt("DB_PORT", 3306),
         DBName:     getEnv("DB_NAME", "flower_sales"),
         DBUser:     getEnv("DB_USER", "flower_user"),
-        DBPassword: getEnv("DB_PASSWORD", ""),
-        JWTSecret:     getEnv("JWT_SECRET", ""),
-        JWTExpiration: getEnvInt("JWT_EXPIRATION", 24),
-        ServerPort:         getEnvInt("SERVER_PORT", 8080),
-        LogLevel:           getEnv("LOG_LEVEL", "info"),
+        DBPassword:     getEnv("DB_PASSWORD", ""),
+        SessionSecret:  getEnv("SESSION_SECRET", ""),
+        SessionExpiry:  getEnvInt("SESSION_EXPIRY", 24),
+        ServerPort:           getEnvInt("SERVER_PORT", 8080),
+        LogLevel:             getEnv("LOG_LEVEL", "info"),
         StockWarningThreshold: getEnvInt("STOCK_WARNING_THRESHOLD", 10),
     }
 }
@@ -884,5 +861,5 @@ func getEnvInt(key string, defaultVal int) int {
 #### 10.9.7 配置更新流程
 
 1. 修改 ConfigMap: `kubectl edit configmap flower-sales-config -n flower-sales`
-2. 重启 Deployment: `kubectl rollout restart deployment/api-server -n flower-sales`
-3. 验证配置: `kubectl exec -it deployment/api-server -n flower-sales -- env | grep DB_`
+2. 重启 Deployment: `kubectl rollout restart deployment/go-server -n flower-sales`
+3. 验证配置: `kubectl exec -it deployment/go-server -n flower-sales -- env | grep DB_`
