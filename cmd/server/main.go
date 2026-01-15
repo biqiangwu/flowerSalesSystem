@@ -7,12 +7,17 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
+	"github.com/biqiangwu/flowerSalesSystem/internal/address"
 	"github.com/biqiangwu/flowerSalesSystem/internal/auth"
 	"github.com/biqiangwu/flowerSalesSystem/internal/config"
 	"github.com/biqiangwu/flowerSalesSystem/internal/database"
+	"github.com/biqiangwu/flowerSalesSystem/internal/flower"
 	"github.com/biqiangwu/flowerSalesSystem/internal/handler"
+	"github.com/biqiangwu/flowerSalesSystem/internal/order"
 	"github.com/biqiangwu/flowerSalesSystem/internal/user"
+	"github.com/biqiangwu/flowerSalesSystem/pkg/middleware"
 )
 
 //go:embed static
@@ -37,37 +42,72 @@ func main() {
 	}
 	log.Println("数据库迁移完成")
 
-	// 4. 初始化服务层
+	// 4. 初始化 Repository 层
 	userRepo := user.NewMySQLUserRepository(db)
+	addressRepo := address.NewAddressRepository(db)
+	flowerRepo := flower.NewFlowerRepository(db)
+	orderRepo := order.NewOrderRepository(db)
+	orderLogRepo := order.NewOrderLogRepository(db)
+
+	// 5. 初始化 Session 管理
 	sessionMgr := auth.NewMemorySessionManager()
+
+	// 6. 初始化服务层
 	authSvc := auth.NewAuthService(userRepo, sessionMgr)
+	flowerSvc := flower.NewFlowerService(flowerRepo)
+	addressSvc := address.NewAddressService(addressRepo)
+	orderSvc := order.NewOrderService(orderRepo, flowerRepo, orderLogRepo)
+	orderLogSvc := order.NewOrderLogService(orderLogRepo)
+	userSvc := user.NewUserService(userRepo)
 
-	// 5. 创建 Handler
-	h := handler.NewHandler(authSvc, nil)
+	// 7. 创建 Handler 并注入所有服务
+	h := handler.NewHandler(authSvc, orderSvc)
+	h.SetServices(authSvc, orderSvc, orderLogSvc, userSvc, flowerSvc, addressSvc, userRepo)
 
-	// 6. 创建 HTTP ServeMux
+	// 8. 创建 HTTP ServeMux
 	mux := http.NewServeMux()
 
-	// 7. 注册认证路由
-	mux.HandleFunc("POST /api/register", h.HandleRegister)
-	mux.HandleFunc("POST /api/login", h.HandleLogin)
-	mux.HandleFunc("POST /api/logout", h.HandleLogout)
-	log.Println("认证路由注册完成")
+	// 9. 注册所有 API 路由
+	h.RegisterRoutes(mux)
+	log.Println("API 路由注册完成")
 
-	// 8. 注册静态文件服务
+	// 10. 注册静态文件服务（SPA 模式）
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		log.Fatalf("静态文件系统配置失败: %v", err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
-	// 9. 启动 HTTP 服务器
+	// 创建 SPA 处理器：未匹配的路由返回 index.html
+	spaHandler := &spaHandler{http.FileServer(http.FS(staticFS))}
+	mux.Handle("/", spaHandler)
+
+	// 11. 应用中间件
+	// 包装日志中间件和恢复中间件
+	finalHandler := middleware.LoggingMiddleware(middleware.RecoveryMiddleware(mux))
+
+	// 12. 启动 HTTP 服务器
 	addr := fmt.Sprintf(":%d", cfg.ServerPort)
 	log.Printf("HTTP 服务器启动在 http://0.0.0.0%s", addr)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, finalHandler); err != nil {
 		log.Fatalf("HTTP 服务器错误: %v", err)
 	}
+}
+
+// spaHandler 处理 SPA 路由，未匹配的路由返回 index.html
+type spaHandler struct {
+	handler http.Handler
+}
+
+func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 如果是 API 请求，不处理
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		h.handler.ServeHTTP(w, r)
+		return
+	}
+
+	// 尝试提供静态文件
+	h.handler.ServeHTTP(w, r)
 }
 
 // init 用于日志初始化
