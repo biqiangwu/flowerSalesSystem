@@ -36,5 +36,9 @@
       "Bash(git:push:*)",
       "WebFetch"
     ]
+  },
+  "sandbox": {
+	  "autoAllowBashIfSandboxed": true,
+	  "enabled": true
   }
 }
