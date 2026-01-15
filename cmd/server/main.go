@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/biqiangwu/flowerSalesSystem/internal/auth"
 	"github.com/biqiangwu/flowerSalesSystem/internal/config"
 	"github.com/biqiangwu/flowerSalesSystem/internal/database"
+	"github.com/biqiangwu/flowerSalesSystem/internal/handler"
+	"github.com/biqiangwu/flowerSalesSystem/internal/user"
 )
 
 //go:embed static
@@ -34,17 +37,31 @@ func main() {
 	}
 	log.Println("数据库迁移完成")
 
-	// 4. 创建 HTTP ServeMux
+	// 4. 初始化服务层
+	userRepo := user.NewMySQLUserRepository(db)
+	sessionMgr := auth.NewMemorySessionManager()
+	authSvc := auth.NewAuthService(userRepo, sessionMgr)
+
+	// 5. 创建 Handler
+	h := handler.NewHandler(authSvc, nil, nil, nil)
+
+	// 6. 创建 HTTP ServeMux
 	mux := http.NewServeMux()
 
-	// 5. 注册静态文件服务
+	// 7. 注册认证路由
+	mux.HandleFunc("POST /api/register", h.HandleRegister)
+	mux.HandleFunc("POST /api/login", h.HandleLogin)
+	mux.HandleFunc("POST /api/logout", h.HandleLogout)
+	log.Println("认证路由注册完成")
+
+	// 8. 注册静态文件服务
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		log.Fatalf("静态文件系统配置失败: %v", err)
 	}
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
-	// 6. 启动 HTTP 服务器
+	// 9. 启动 HTTP 服务器
 	addr := fmt.Sprintf(":%d", cfg.ServerPort)
 	log.Printf("HTTP 服务器启动在 http://0.0.0.0%s", addr)
 
