@@ -16,3 +16,15 @@ type LoginRequest struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// CreateOrderRequest 创建订单请求
+type CreateOrderRequest struct {
+	AddressID int                      `json:"address_id"`
+	Items     []*CreateOrderItemRequest `json:"items"`
+}
+
+// CreateOrderItemRequest 创建订单项请求
+type CreateOrderItemRequest struct {
+	FlowerSKU string `json:"flower_sku"`
+	Quantity  int    `json:"quantity"`
+}

@@ -55,7 +55,7 @@ func setupTestHandler(t *testing.T) *Handler {
 	sessionMgr := auth.NewMemorySessionManager()
 	authSvc := auth.NewAuthService(userRepo, sessionMgr)
 
-	return NewHandler(authSvc, nil, nil, nil)
+	return NewHandler(authSvc, nil)
 }
 
 // TestHandleRegister 测试注册接口
@@ -375,7 +375,7 @@ func TestHandleLogout_MissingCookie(t *testing.T) {
 
 // TestRespondJSON 测试 JSON 响应辅助函数
 func TestRespondJSON(t *testing.T) {
-	handler := NewHandler(nil, nil, nil, nil)
+	handler := NewHandler(nil, nil)
 
 	testData := map[string]string{
 		"message": "success",
@@ -406,7 +406,7 @@ func TestRespondJSON(t *testing.T) {
 
 // TestRespondError 测试错误响应辅助函数
 func TestRespondError(t *testing.T) {
-	handler := NewHandler(nil, nil, nil, nil)
+	handler := NewHandler(nil, nil)
 
 	w := httptest.NewRecorder()
 	handler.respondError(w, http.StatusBadRequest, "invalid input")

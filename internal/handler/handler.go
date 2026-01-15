@@ -5,21 +5,23 @@ import (
 	"net/http"
 
 	"github.com/biqiangwu/flowerSalesSystem/internal/auth"
+	"github.com/biqiangwu/flowerSalesSystem/internal/order"
 )
 
 // Handler HTTP 处理器
 type Handler struct {
 	authService auth.AuthService
+	orderService order.OrderService
 	// 其他 service 稍后添加
 	// flowerService flower.FlowerService
-	// orderService  order.OrderService
 	// userService   user.UserService
 }
 
 // NewHandler 创建 Handler
-func NewHandler(authService auth.AuthService, flowerService interface{}, orderService interface{}, userService interface{}) *Handler {
+func NewHandler(authService auth.AuthService, orderService order.OrderService) *Handler {
 	return &Handler{
 		authService: authService,
+		orderService: orderService,
 	}
 }
 
