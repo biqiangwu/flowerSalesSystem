@@ -28,3 +28,8 @@ type CreateOrderItemRequest struct {
 	FlowerSKU string `json:"flower_sku"`
 	Quantity  int    `json:"quantity"`
 }
+
+// ResetPasswordRequest 重置密码请求
+type ResetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}

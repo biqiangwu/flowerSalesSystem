@@ -6,15 +6,16 @@ import (
 
 	"github.com/biqiangwu/flowerSalesSystem/internal/auth"
 	"github.com/biqiangwu/flowerSalesSystem/internal/order"
+	"github.com/biqiangwu/flowerSalesSystem/internal/user"
 )
 
 // Handler HTTP 处理器
 type Handler struct {
 	authService auth.AuthService
 	orderService order.OrderService
+	userService  user.UserService
 	// 其他 service 稍后添加
 	// flowerService flower.FlowerService
-	// userService   user.UserService
 }
 
 // NewHandler 创建 Handler

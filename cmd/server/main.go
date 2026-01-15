@@ -43,7 +43,7 @@ func main() {
 	authSvc := auth.NewAuthService(userRepo, sessionMgr)
 
 	// 5. 创建 Handler
-	h := handler.NewHandler(authSvc, nil, nil, nil)
+	h := handler.NewHandler(authSvc, nil)
 
 	// 6. 创建 HTTP ServeMux
 	mux := http.NewServeMux()
