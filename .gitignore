@@ -3,3 +3,14 @@
 .idea/ 
 *.DS_Store 
 /my_flower_project
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.idea
+.mcp.json
+.profile
+.ripgreprc
+.vscode
+.zprofile
+.zshrc
