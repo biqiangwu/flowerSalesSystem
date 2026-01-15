@@ -167,3 +167,97 @@ func extractOrderNo(path string) string {
 	}
 	return ""
 }
+
+// extractOrderID 从 URL 路径中提取订单ID
+// 路径格式: /api/orders/{order_id}/complete 或 /api/orders/{order_id}/cancel
+func extractOrderID(path string) int {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) >= 3 && parts[0] == "api" && parts[1] == "orders" {
+		if id, err := strconv.Atoi(parts[2]); err == nil {
+			return id
+		}
+	}
+	return 0
+}
+
+// HandleCompleteOrder 处理完成订单
+func (h *Handler) HandleCompleteOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 验证用户身份
+	userID, ok := h.authenticateRequest(r)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// 从 URL 获取订单ID
+	orderID := extractOrderID(r.URL.Path)
+	if orderID <= 0 {
+		h.respondError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+
+	ctx := context.Background()
+	err := h.orderService.CompleteOrder(ctx, orderID, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "不存在") {
+			h.respondError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		if strings.Contains(err.Error(), "状态") {
+			h.respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		h.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "order completed successfully",
+	})
+}
+
+// HandleCancelOrder 处理取消订单
+func (h *Handler) HandleCancelOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 验证用户身份
+	userID, ok := h.authenticateRequest(r)
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// 从 URL 获取订单ID
+	orderID := extractOrderID(r.URL.Path)
+	if orderID <= 0 {
+		h.respondError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+
+	ctx := context.Background()
+	err := h.orderService.CancelOrder(ctx, orderID, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "不存在") {
+			h.respondError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		if strings.Contains(err.Error(), "状态") {
+			h.respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		h.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "order cancelled successfully",
+	})
+}

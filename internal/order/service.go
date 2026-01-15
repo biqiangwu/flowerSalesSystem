@@ -12,6 +12,8 @@ type OrderService interface {
 	CreateOrder(ctx context.Context, userID int, req *CreateOrderRequest) (string, error)
 	GetOrder(ctx context.Context, userID int, orderNo string) (*OrderResponse, error)
 	ListOrders(ctx context.Context, userID int, filter OrderListFilter) ([]*OrderResponse, error)
+	CompleteOrder(ctx context.Context, orderID int, operatorID int) error
+	CancelOrder(ctx context.Context, orderID int, operatorID int) error
 }
 
 // CreateOrderRequest 创建订单请求
@@ -268,4 +270,68 @@ func (s *orderService) toResponse(order *Order, items []*OrderItem) *OrderRespon
 	}
 
 	return response
+}
+
+// CompleteOrder 完成订单
+func (s *orderService) CompleteOrder(ctx context.Context, orderID int, operatorID int) error {
+	// 获取订单
+	order, _, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("订单不存在: %w", err)
+	}
+
+	// 验证订单状态流转：只有待处理订单可以完成
+	if order.Status != StatusPending {
+		return fmt.Errorf("订单状态不正确，当前状态: %s, 只有待处理订单可以完成", order.Status)
+	}
+
+	// 更新订单状态为已完成
+	if err := s.orderRepo.UpdateStatus(ctx, orderID, StatusCompleted); err != nil {
+		return fmt.Errorf("更新订单状态失败: %w", err)
+	}
+
+	// 记录订单日志
+	log := NewOrderLog(orderID, operatorID, "complete_order", StatusCompleted, order.Status)
+	if err := s.logRepo.CreateLog(ctx, log); err != nil {
+		// 日志记录失败不影响业务操作
+		fmt.Printf("warning: failed to create order log: %v\n", err)
+	}
+
+	return nil
+}
+
+// CancelOrder 取消订单（含库存回退）
+func (s *orderService) CancelOrder(ctx context.Context, orderID int, operatorID int) error {
+	// 获取订单
+	order, items, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return fmt.Errorf("订单不存在: %w", err)
+	}
+
+	// 验证订单状态流转：只有待处理订单可以取消
+	if order.Status != StatusPending {
+		return fmt.Errorf("订单状态不正确，当前状态: %s, 只有待处理订单可以取消", order.Status)
+	}
+
+	// 回退库存
+	for _, item := range items {
+		if err := s.flowerRepo.UpdateStock(ctx, item.FlowerSKU, item.Quantity); err != nil {
+			// 库存回退失败，记录警告但继续处理
+			fmt.Printf("warning: failed to rollback stock for %s: %v\n", item.FlowerSKU, err)
+		}
+	}
+
+	// 更新订单状态为已取消
+	if err := s.orderRepo.UpdateStatus(ctx, orderID, StatusCancelled); err != nil {
+		return fmt.Errorf("更新订单状态失败: %w", err)
+	}
+
+	// 记录订单日志
+	log := NewOrderLog(orderID, operatorID, "cancel_order", StatusCancelled, order.Status)
+	if err := s.logRepo.CreateLog(ctx, log); err != nil {
+		// 日志记录失败不影响业务操作
+		fmt.Printf("warning: failed to create order log: %v\n", err)
+	}
+
+	return nil
 }
