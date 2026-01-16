@@ -26,7 +26,7 @@ run:
 
 # 构建 Docker 镜像
 docker-build:
-	docker build -t flowersales:latest .
+	DOCKER_BUILDKIT=0 docker build --network=host -t flowersales:latest .
 
 # 初始化 Kind 集群和基础设施
 k8s-setup:
