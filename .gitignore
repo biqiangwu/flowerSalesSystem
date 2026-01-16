@@ -1,7 +1,7 @@
-.claude/settings.local.json 
-.vscode/ 
-.idea/ 
-*.DS_Store 
+.claude/settings.local.json
+.vscode/
+.idea/
+*.DS_Store
 /my_flower_project
 .bash_profile
 .bashrc
@@ -14,3 +14,12 @@
 .vscode
 .zprofile
 .zshrc
+
+# 构建产物
+bin/
+*.exe
+*.test
+*.out
+
+# Go 缓存
+.cache/

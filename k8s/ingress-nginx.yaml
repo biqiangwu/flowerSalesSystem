@@ -1,0 +1,10 @@
+# Ingress-nginx Controller for Kind
+# 使用官方 stable manifest
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+---
+# 安装 ingress-nginx controller
+# 使用 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/kind/deploy.yaml
+# 这里创建占位符，实际部署时使用官方 manifest

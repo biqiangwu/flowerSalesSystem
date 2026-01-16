@@ -1,0 +1,58 @@
+replicaCount: 2
+
+image:
+  repository: flowersales
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: flowers.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# 环境变量配置
+env:
+  DB_HOST: "mysql-service"
+  DB_PORT: "3306"
+  DB_NAME: "flower_sales"
+  DB_USER: "flower_user"
+  DB_PASSWORD: ""
+  SERVER_PORT: "8080"
+  LOG_LEVEL: "info"
+  SESSION_SECRET: ""
+  SESSION_EXPIRY: "24"
+  STOCK_WARNING_THRESHOLD: "10"
+
+# 敏感信息配置（通过 Secret 注入）
+envSecret:
+  DB_PASSWORD: "change-me"
+  SESSION_SECRET: "change-me"
+
+# MySQL 部署配置（可选，使用外部 MySQL 时设置为 false）
+mysql:
+  enabled: false
+  auth:
+    rootPassword: "rootpassword"
+    database: "flower_sales"
+    user: "flower_user"
+    password: ""
+  persistence:
+    enabled: true
+    size: 1Gi

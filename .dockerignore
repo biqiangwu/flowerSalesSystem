@@ -1,0 +1,11 @@
+.git
+.gitignore
+.claude
+.idea
+.vscode
+*.md
+LICENSE
+bin/
+specs/
+helm/
+k8s/

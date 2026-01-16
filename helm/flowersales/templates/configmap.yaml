@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "flowersales.fullname" . }}-config
+  labels:
+    {{- include "flowersales.labels" . | nindent 4 }}
+data:
+  # 配置通过环境变量直接注入到 Deployment 中
+  # 此 ConfigMap 保留用于未来扩展
+  app.conf: |
+    server_port: {{ .Values.env.SERVER_PORT }}
+    log_level: {{ .Values.env.LOG_LEVEL }}

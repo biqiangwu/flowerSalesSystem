@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "flowersales.fullname" . }}
+  labels:
+    {{- include "flowersales.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "flowersales.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "flowersales.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.targetPort }}
+          protocol: TCP
+        env:
+        {{- range $key, $value := .Values.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "flowersales.fullname" . }}-secret
+              key: DB_PASSWORD
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "flowersales.fullname" . }}-secret
+              key: SESSION_SECRET
+        livenessProbe:
+          httpGet:
+            path: /api/flowers
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /api/flowers
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 3
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
