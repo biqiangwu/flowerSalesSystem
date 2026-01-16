@@ -35,7 +35,7 @@ k8s-setup:
 	kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
 	kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=300s
 	kubectl apply -f k8s/metallb-native.yaml
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/kind/deploy.yaml
+	kubectl apply -f k8s/ingress-nginx.yaml
 	kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
 
 # 使用 Helm 部署应用
