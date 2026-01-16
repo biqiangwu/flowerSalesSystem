@@ -31,6 +31,7 @@ docker-build:
 # 初始化 Kind 集群和基础设施
 k8s-setup:
 	kind create cluster --config=k8s/kind-cluster.yaml
+	kubectl wait --for=condition=ready nodes --all --timeout=90s
 	kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
 	kubectl wait --namespace metallb-system --for=condition=ready pod --selector=app=metallb --timeout=300s
 	kubectl apply -f k8s/metallb-native.yaml
